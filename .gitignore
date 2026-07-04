@@ -3,6 +3,10 @@
 .RData
 .Ruserdata
 .Rproj.user/
+README.html
+Rplots.pdf
+data/EA/raw/[0-9][0-9][0-9][0-9]Q[0-9].csv
+data/EA/raw/SPF_individual_forecasts_old.zip
 
 graphs/**/*.pdf
 graphs/**/*.xlsx

@@ -45,15 +45,15 @@ library(Rcpp)
 message("MRT replication: creating EA output folders.")
 required_dirs <- c(
   "graphs/EA_2024/Baseline",
-  "tables/EA/Baseline"
+  "tables/EA_2024/Baseline"
 )
 invisible(lapply(required_dirs, dir.create, recursive = TRUE, showWarnings = FALSE))
 
 message("MRT replication: loading shared R and C++ routines.")
-source("RScripts/0-procedure.R")
-source("RScripts/1-procedure.R")
-Rcpp::sourceCpp("RScripts/function_loadings.cpp")
-Rcpp::sourceCpp("RScripts/kalman_cpp.cpp")
+source("RScripts/helpers/0-procedure.R")
+source("RScripts/helpers/1-procedure.R")
+Rcpp::sourceCpp("RScripts/helpers/function_loadings.cpp")
+Rcpp::sourceCpp("RScripts/helpers/kalman_cpp.cpp")
 
 if (indic.compute.mixture) {
   message("MRT replication: loading raw EA data and recomputing mixture inputs.")
@@ -108,28 +108,28 @@ estimation_start <- if (run_mode == "estimate_from_generic") "generic" else "sav
 save_estimation_results <- indic.estimate
 
 run_env <- environment()
-source_script("RScripts/0-procedure.R", env = run_env)
-source_script("RScripts/1-procedure.R", env = run_env)
+source_script("RScripts/helpers/0-procedure.R", env = run_env)
+source_script("RScripts/helpers/1-procedure.R", env = run_env)
 source_script("RScripts/EA/Estimate_joint_EA_model_no_higher_order_calendar_short.R", env = run_env)
 source_script("RScripts/EA/model.implied.distribution.joint.EA.R", env = run_env)
 
 path_graph <- "graphs/EA_2024/Baseline/"
-source_script("RScripts/make_outputs/make_figure_factors.R", env = run_env)
-source_script("RScripts/make_outputs/make_figure_correl.R", env = run_env)
-source_script("RScripts/make_outputs/make_figure_fit_Surveys.R", env = run_env)
+source_script("RScripts/make_figures/make_figure_factors.R", env = run_env)
+source_script("RScripts/make_figures/make_figure_correl.R", env = run_env)
+source_script("RScripts/make_figures/make_figure_fit_Surveys.R", env = run_env)
 if (indic.compute.mixture) {
-  source_script("RScripts/make_outputs/make_figure_model_implied_distri.R", env = run_env)
+  source_script("RScripts/make_figures/make_figure_model_implied_distri.R", env = run_env)
 } else {
   message("MRT replication: skipping raw SPF distribution plots in cached EA mode.")
 }
-source_script("RScripts/make_outputs/make_figure_TrendCycle.R", env = run_env)
+source_script("RScripts/make_figures/make_figure_TrendCycle.R", env = run_env)
 
 # This script needs echo=TRUE because some ggplot objects are printed only when
 # the sourced expressions are echoed.
-source_script("RScripts/make_outputs/make_figure_DemandSupply.R", env = run_env, echo = TRUE)
+source_script("RScripts/make_figures/make_figure_DemandSupply.R", env = run_env, echo = TRUE)
 
-path_table <- "tables/EA/Baseline/"
-source_script("RScripts/make_outputs/make_table_param.R", env = run_env)
-source_script("RScripts/make_outputs/make_workbooks.R", env = run_env)
+path_table <- "tables/EA_2024/Baseline/"
+source_script("RScripts/make_tables/make_table_param.R", env = run_env)
+source_script("RScripts/make_workbooks/make_workbooks.R", env = run_env)
 
 message("MRT replication: auxiliary EA workflow complete.")

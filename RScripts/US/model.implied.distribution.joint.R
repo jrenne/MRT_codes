@@ -10,6 +10,7 @@
 # ==============================================================================
 
 #indic.make.implied.distri <- "FALSE"
+if (!exists("show_implied_distribution_progress")) show_implied_distribution_progress <- TRUE
 
 par(plt=c(.1,.9,.1,.9))
 
@@ -34,7 +35,9 @@ observables <- observables
 select.inflation.types <- select.inflation.types
 H <- H
 KF.res <- KF.result4
-print(KF.res$log.lik)
+if (show_implied_distribution_progress) {
+  message("MRT replication: Kalman log-likelihood for implied distributions: ", round(KF.res$log.lik, 3))
+}
 
 Select.if.compute.stdv <- matrix(0,length(HHH),estimated.Model$r)
 
@@ -58,6 +61,10 @@ width.distri <- 30
 # ==============================================================================
 
 if(indic.make.implied.distri=="TRUE"){
+  if (show_implied_distribution_progress) {
+    message("MRT replication: recomputing model-implied distributions.")
+  }
+  implied_distribution_start_time <- Sys.time()
   
   # Initialize the max for v and its increment. (Riemann sum)
   # the start is exp(-10)
@@ -88,6 +95,8 @@ if(indic.make.implied.distri=="TRUE"){
   # ============================================================================
   
   ### Loop on the indicator of average... 0 by default in the AB function
+  total_implied_distribution_steps <- length(2:1) * estimated.Model$r * length(HHH)
+  implied_distribution_step <- 0
   
   for(indic.average in 2:1){
     # ==========================================================================
@@ -119,6 +128,16 @@ if(indic.make.implied.distri=="TRUE"){
       ## Begin the loop to compute the PDF
       count <- 0
       for(HH in HHH){
+        implied_distribution_step <- implied_distribution_step + 1
+        if (show_implied_distribution_progress) {
+          message(
+            "MRT replication: implied distribution step ",
+            implied_distribution_step, "/", total_implied_distribution_steps,
+            " (average=", indic.average,
+            ", variable=", area.var,
+            ", horizon=", HH, "Q)."
+          )
+        }
         
         ### Increment count in the loop
         count <- count + 1
@@ -167,15 +186,40 @@ if(indic.make.implied.distri=="TRUE"){
     }
   }
   
-  # implied.distribution.data <- list("PDF.all"=PDF.all,"PDF.average.all"=PDF.average.all,"PDF.x.all"=PDF.x.all)
-  # saveRDS(implied.distribution.data, file="./results/US/US.Model.Implied.Distribution.RData")
-  # ?saveRDS
+  implied.distribution.data <- list("PDF.all"=PDF.all,"PDF.average.all"=PDF.average.all,"PDF.x.all"=PDF.x.all)
+  if (exists("path_implied_distribution")) {
+    dir.create(dirname(path_implied_distribution), recursive = TRUE, showWarnings = FALSE)
+    if (show_implied_distribution_progress) {
+      message("MRT replication: saving model-implied distributions to ", path_implied_distribution)
+    }
+    saveRDS(implied.distribution.data, file = path_implied_distribution, compress = "xz")
+  }
+  if (show_implied_distribution_progress) {
+    message(
+      "MRT replication: model-implied distributions completed in ",
+      round(as.numeric(difftime(Sys.time(), implied_distribution_start_time, units = "secs")), 1),
+      " seconds."
+    )
+  }
   
 } else{
-  implied.distribution.data <- readRDS(file="results/US/US.Model.Implied.Distribution.RData", refhook = NULL)
+  if (!exists("path_implied_distribution")) {
+    path_implied_distribution <- "results/US/US.Model.Implied.Distribution.RData"
+  }
+  if (show_implied_distribution_progress) {
+    message("MRT replication: loading model-implied distributions from ", path_implied_distribution)
+  }
+  implied_distribution_start_time <- Sys.time()
+  implied.distribution.data <- readRDS(file = path_implied_distribution, refhook = NULL)
+  if (show_implied_distribution_progress) {
+    message(
+      "MRT replication: model-implied distributions loaded in ",
+      round(as.numeric(difftime(Sys.time(), implied_distribution_start_time, units = "secs")), 1),
+      " seconds."
+    )
+  }
   
   PDF.all <- implied.distribution.data$PDF.all
   PDF.average.all <- implied.distribution.data$PDF.average.all
   PDF.x.all <- implied.distribution.data$PDF.x.all
 }
-

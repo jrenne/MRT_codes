@@ -27,7 +27,6 @@ library(writexl)
 library(eurostat)
 library(mFilter)
 
-
 # Download HICP data directly for the Euro Area (EA zone)
 hcpi <- get_eurostat("prc_hicp_midx", filters = list(geo = "EA"), time_format = "date") %>%
   filter(geo == "EA",

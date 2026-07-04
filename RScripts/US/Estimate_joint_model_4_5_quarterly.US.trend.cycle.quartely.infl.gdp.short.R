@@ -9,6 +9,9 @@ indic.4th       <- TRUE
 if (!exists("indic.estimate")) indic.estimate <- FALSE
 if (!exists("estimation_start")) estimation_start <- "saved"
 if (!exists("save_estimation_results")) save_estimation_results <- indic.estimate
+if (!exists("indic.3rd.use")) indic.3rd.use <- TRUE
+if (!exists("indic.4th.use")) indic.4th.use <- FALSE
+if (!exists("indic.model.var.only")) indic.model.var.only <- FALSE
 indic.no.4Q <- TRUE
 
 all_mat <- NULL
@@ -126,6 +129,19 @@ area <- "US"
 indic.observed <- "q.o.q"
 var.type <- "infl.gdp"
 
+default_model_file <- if (indic.model.var.only) {
+  "results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.no.3rd.4th.no.4Q.RData"
+} else if (indic.4th.use) {
+  "results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.with.3rd.4th.errors.no.4Q.best.final.new.RData"
+} else {
+  "results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.with.3rd.only.errors.no.4Q.best.RData"
+}
+if (!exists("model_files")) {
+  model_files <- list(initial = default_model_file, output = default_model_file, save = default_model_file)
+}
+if (is.null(model_files$initial) || is.na(model_files$initial) || !nzchar(model_files$initial)) model_files$initial <- default_model_file
+if (is.null(model_files$output) || is.na(model_files$output) || !nzchar(model_files$output)) model_files$output <- default_model_file
+
 
 ## Calculate delta
 delta.aux <- matrix(1,m,r)
@@ -170,8 +186,43 @@ observables <- as.matrix(observables)
 
 if(indic.estimate){
   
+  if (!exists("optimization_setup")) {
+    optimization_setup <- list()
+  }
+  optimization_outer_loops <- optimization_setup$outer_loops
+  optimization_nm1_maxit <- optimization_setup$nelder_mead_first_maxit
+  optimization_nlminb_maxit <- optimization_setup$nlminb_maxit
+  optimization_nm2_maxit <- optimization_setup$nelder_mead_second_maxit
+  optimization_trace <- optimization_setup$trace
+  optimization_compute_hessian <- optimization_setup$compute_hessian
+  optimization_nlminb_kkt <- optimization_setup$nlminb_kkt
+  if (is.null(optimization_outer_loops)) optimization_outer_loops <- 3
+  if (is.null(optimization_nm1_maxit)) optimization_nm1_maxit <- 1500
+  if (is.null(optimization_nlminb_maxit)) optimization_nlminb_maxit <- 50
+  if (is.null(optimization_nm2_maxit)) optimization_nm2_maxit <- 1500
+  if (is.null(optimization_trace)) optimization_trace <- TRUE
+  if (is.null(optimization_compute_hessian)) optimization_compute_hessian <- FALSE
+  if (is.null(optimization_nlminb_kkt)) optimization_nlminb_kkt <- FALSE
+  optimization_outer_loops <- as.integer(optimization_outer_loops)
+  optimization_nm1_maxit <- as.integer(optimization_nm1_maxit)
+  optimization_nlminb_maxit <- as.integer(optimization_nlminb_maxit)
+  optimization_nm2_maxit <- as.integer(optimization_nm2_maxit)
+  if (any(c(optimization_outer_loops, optimization_nm1_maxit, optimization_nlminb_maxit, optimization_nm2_maxit) < 1)) {
+    stop("Optimization loop and maxit controls must be positive integers.")
+  }
+  
+  message(
+    "MRT replication: optimization schedule: ",
+    optimization_outer_loops, " loop(s), ",
+    "Nelder-Mead maxit=", optimization_nm1_maxit, ", ",
+    "nlminb maxit=", optimization_nlminb_maxit, ", ",
+    "Nelder-Mead maxit=", optimization_nm2_maxit, "."
+  )
+  
   if (estimation_start == "saved") {
-    Model.initial <- readRDS(file="results/US/US.Model.gdp.trend.cycle.4.5.quarterly.best.corr.gdp.with.3rd.4th.RData", refhook = NULL)
+    saved_model_file <- model_files$initial
+    message("MRT replication: initializing estimation from ", saved_model_file)
+    Model.initial <- readRDS(file=saved_model_file, refhook = NULL)
     
     model <- list(pi.bar = Model.initial$pi.bar,
                   delta.t = Model.initial$delta.t,
@@ -183,8 +234,10 @@ if(indic.estimate){
                   nu = Model.initial$nu, # 1st parameter of the non centered gamma process (AGP(nu,phi,mu))
                   phi = Model.initial$phi,
                   mu = Model.initial$mu, # 3rd parameter of the AGP
-                  sigma.av = stdv.measur$sigma.av,
-                  sigma.var = stdv.measur$sigma.var #, sigma.k3rd = stdv.measur$sigma.k3rd, sigma.k4th = stdv.measur$sigma.k4th
+                  sigma.av = Model.initial$sigma.av,
+                  sigma.var = Model.initial$sigma.var,
+                  sigma.k3rd = Model.initial$sigma.k3rd,
+                  sigma.k4th = Model.initial$sigma.k4th
                   
     )
   } else if (estimation_start == "generic") {
@@ -208,7 +261,7 @@ if(indic.estimate){
   }
   
   
-  if(indic.4th){
+  if(estimation_start == "generic" && indic.4th){
     model$sigma.av[,,3][,2] = model$sigma.av[,,3][,2]/2
     model$sigma.k3rd = stdv.measur$sigma.k3rd/3 #before no change => to fit correctly skewness
     model$sigma.k4th = stdv.measur$sigma.k4th*2#5 #before no change => no need to be more precise for kurtosis
@@ -296,11 +349,11 @@ if(indic.estimate){
   thetas.inter.all <- thetas
   
   ###  Perform optimization
-  for(j in 1:3){
+  for(j in seq_len(optimization_outer_loops)){
     
     solution1 <- optim(fn = fit.log.lik.trend.cycle.joint.model.3.1, par = thetas.inter, estimated.Model=estimated.Model,
                        n=n, m.Y=m, q=q, r=r, nbr.horizon.max=nbr.horizon.max, var.type=var.type, all_mat=all_mat, method=c("Nelder-Mead"), 
-                       control=list(trace=TRUE, maxit=1500), hessian = FALSE)
+                       control=list(trace=optimization_trace, maxit=optimization_nm1_maxit), hessian = optimization_compute_hessian)
     
     #saveRDS(solution1, file="results/US/last_solution_optim.RData")
     #?saveRDS
@@ -312,7 +365,7 @@ if(indic.estimate){
     #note: remove also kkt=FALSE if wants to estimate hessian
     solution1 <- optimx(fn = fit.log.lik.trend.cycle.joint.model.3.1, par = thetas.inter, estimated.Model=estimated.Model,
                         n=n, m.Y=m, q=q, r=r, nbr.horizon.max=nbr.horizon.max, var.type=var.type, all_mat=all_mat, method=c("nlminb"), 
-                        control=list(trace=TRUE, maxit=50, kkt=FALSE), hessian = FALSE)
+                        control=list(trace=optimization_trace, maxit=optimization_nlminb_maxit, kkt=optimization_nlminb_kkt), hessian = optimization_compute_hessian)
     
     #saveRDS(solution1, file="results/US/last_solution_optim.RData")
     #?saveRDS
@@ -323,7 +376,7 @@ if(indic.estimate){
     
     solution1 <- optim(fn = fit.log.lik.trend.cycle.joint.model.3.1, par = thetas.inter, estimated.Model=estimated.Model,
                        n=n, m.Y=m, q=q, r=r, nbr.horizon.max=nbr.horizon.max, var.type=var.type, all_mat=all_mat, method=c("Nelder-Mead"),
-                       control=list(trace=TRUE, maxit=1500), hessian = FALSE)
+                       control=list(trace=optimization_trace, maxit=optimization_nm2_maxit), hessian = optimization_compute_hessian)
     
     #saveRDS(solution1, file="results/US/last_solution_optim.RData")
     #?saveRDS
@@ -359,16 +412,8 @@ if(indic.estimate){
 } else{
   
   #Model.final <- readRDS(file="results/US/US.Model.gdp.trend.cycle.4.5.quarterly.best.corr.gdp.with.3rd.4th.RData", refhook = NULL)
-  if(!indic.model.var.only){
-    if(indic.4th.use){
-      Model.final <- readRDS(file="results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.with.3rd.4th.errors.no.4Q.best.final.new.RData", refhook = NULL)
-    } else{
-      Model.final <- readRDS(file="results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.with.3rd.only.errors.no.4Q.best.RData", refhook = NULL)
-    }
-  } else{
-    Model.final <- readRDS(file="results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.no.3rd.4th.no.4Q.RData", refhook = NULL)
-   
-  }
+  message("MRT replication: loading model for outputs from ", model_files$output)
+  Model.final <- readRDS(file=model_files$output, refhook = NULL)
   
 }
 
@@ -401,14 +446,13 @@ Model.final$KF.result3 <- KF.result3
 Model.final$KF.result4 <- KF.result4
 
 # Save Model.final with KF.results to have updated values stored
-if(save_estimation_results && !indic.model.var.only){
-  if(indic.4th.use){
-    saveRDS(Model.final, file="results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.with.3rd.4th.errors.no.4Q.best.final.new.RData")
-  } else{
-    saveRDS(Model.final, file="results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.with.3rd.only.errors.no.4Q.best.RData")
+if(save_estimation_results){
+  if (is.null(model_files$save) || is.na(model_files$save) || !nzchar(model_files$save)) {
+    stop("save_estimation_results is TRUE, but model_files$save is empty.", call. = FALSE)
   }
-} else if(save_estimation_results){
-  saveRDS(Model.final, file="results/US/US.Model.infl.gdp.trend.cycle.4.5.quarterly.joint.no.3rd.4th.no.4Q.RData")
+  dir.create(dirname(model_files$save), recursive = TRUE, showWarnings = FALSE)
+  message("MRT replication: saving estimated model to ", model_files$save)
+  saveRDS(Model.final, file=model_files$save)
 }
 
 

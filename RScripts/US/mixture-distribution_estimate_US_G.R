@@ -17,6 +17,16 @@
 # This program has to be run after load.data.R
 #
 
+if (!exists("save_mixture_diagnostic_plots")) {
+  save_mixture_diagnostic_plots <- FALSE
+}
+if (isTRUE(save_mixture_diagnostic_plots)) {
+  dir.create("graphs/mixture_diagnostics", recursive = TRUE, showWarnings = FALSE)
+  pdf("graphs/mixture_diagnostics/gdp_distribution_smoothing_diagnostics.pdf")
+} else {
+  pdf(NULL)
+}
+
 # Define the different dates at which the bins changed
 dates.all.surveys <- c(
   "1981_1992",
@@ -746,3 +756,4 @@ legend("bottom",inset = 0, title="Variables:", lty=c('solid','solid','solid','so
        col = c("blue", "red", "black", "purple", "darkgreen"), fill=c("blue", "red", "black", "purple", "darkgreen"),
        cex=1, horiz = TRUE)
 
+dev.off()
