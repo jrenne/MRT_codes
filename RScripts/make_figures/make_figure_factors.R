@@ -5,7 +5,7 @@
 #### Y_t -----------------------------------------------------------------------
 ## Parameters in order to diplay well the chart
 
-color_supply <- "black"
+color_supply <- "grey45"
 color_demand <- "black"
 line_width <- 2.8
 dotted_line_width <- 5.0

@@ -5,7 +5,7 @@
 decimal <- 3
 
 if (!exists("path_table")) {
-  path_table <- "tables/US_2024/Baseline/"
+  path_table <- "tables/US_2024/Comparison/"
 }
 dir.create(path_table, recursive = TRUE, showWarnings = FALSE)
 

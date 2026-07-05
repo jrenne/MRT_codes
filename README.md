@@ -17,7 +17,7 @@ source("install_packages.R")
 source("main.R")
 ```
 
-The script uses relative paths and should be run from the root of this folder. It prints progress messages before each major data, model, figure, table, and workbook step. With the default settings and required packages already installed, the full US replication run takes approximately 5 minutes on a standard recent laptop.
+The script uses relative paths and should be run from the root of this folder. It prints progress messages before each major data, model, figure, table, and workbook step. With the default settings and required packages already installed, generating the figures and tables from saved results takes approximately 1-2 minutes on a standard recent laptop.
 
 By default, `main.R` sets:
 
@@ -25,9 +25,10 @@ By default, `main.R` sets:
 run_mode <- "outputs_from_saved"
 model_specifications_to_process <- c("all_moments", "no_3rd_4th", "baseline")
 recompute_mixture_inputs <- FALSE
+recompute_model_implied_distributions <- FALSE
 ```
 
-This reproduces the paper figures and tables from the stored estimation results and the precomputed survey-distribution inputs in `data/processed/`. Users who want to re-estimate the model can change `run_mode` at the top of `main.R`:
+This reproduces the paper figures and tables from the stored estimation results, the precomputed survey-distribution inputs in `data/processed/`, and cached model-implied distributions in `results/US/`. Users who want to re-estimate the model can change `run_mode` at the top of `main.R`:
 
 - `"outputs_from_saved"`: regenerate figures and tables from saved estimates.
 - `"estimate_from_saved"`: re-estimate, initialized from saved estimates.
@@ -97,6 +98,14 @@ recompute_mixture_inputs <- TRUE
 ```
 
 This reruns the smoothing scripts for inflation and real GDP growth, rebuilds the Kalman-filter observables in memory, and then uses those regenerated inputs in the model/output workflow. It is slower than the default run, so the default uses the precomputed inputs. Diagnostic plots from the smoothing step are omitted by default; set `save_mixture_diagnostic_plots <- TRUE` in `main.R` if you want them written to `graphs/mixture_diagnostics/`.
+
+To recompute the analytical model-implied distributions used in the distribution-fit figures and diagnostic tables, set:
+
+```r
+recompute_model_implied_distributions <- TRUE
+```
+
+The default reads the cached files in `results/US/` and automatically recomputes a cache only if the corresponding file is missing. Keeping this switch at `FALSE` makes the standard replication run substantially faster.
 
 The euro-area auxiliary workflow can be run separately with:
 
@@ -171,10 +180,11 @@ The US workflow writes figures, workbooks, and tables to:
 - `graphs/US_2024/All_moments/`
 - `graphs/US_2024/No_3rd_4th/`
 - `tables/US_2024/Baseline/`
+- `tables/US_2024/Comparison/`
 - `tables/US_2024/All_moments/`
 - `tables/US_2024/No_3rd_4th/`
 
-The main-paper tables are in `tables/US_2024/Baseline/`. The default US workflow generates `table_param.txt`, `table_distribution_divergence.txt`, and `table_distribution_divergence_VaR.txt`.
+The baseline parameter table is in `tables/US_2024/Baseline/`. The distribution-fit comparison tables are in `tables/US_2024/Comparison/`, since they compare the baseline, all-moments, and no-higher-moments specifications. The default US workflow generates `table_param.txt`, `table_distribution_divergence.txt`, and `table_distribution_divergence_VaR.txt`.
 
 The paper baseline is `graphs/US_2024/Baseline/`, which includes first-, second-, and third-order SPF moments and excludes fourth-order moments. `graphs/US_2024/All_moments/` keeps the specification that also includes fourth-order moments, and `graphs/US_2024/No_3rd_4th/` keeps the variance-only robustness specification.
 

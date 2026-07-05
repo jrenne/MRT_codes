@@ -1822,10 +1822,6 @@ make.stdv.measure <- function(observables.with.dates,select.inflation.types,r){
       count3 <- count2 + nb.k3rd # New
       nb.k4th <- sum(select.inflation.types[,area.var,infl.type]>=1111,na.rm=TRUE) # number of measurement eq on 4th cumulants
       count4 <- count3 + nb.k4th # New
-      ## Print counts
-      print(c(count0,count1,count2,count3,count4))
-      # For area.var==1
-      
       # Replace sigma.av with the appropriate variance calculate for the point estimate
       sigma.av[(!is.na(select.inflation.types[,area.var,infl.type])&select.inflation.types[,area.var,infl.type]>=1),area.var,infl.type] <-
         vec.stdv[(count0+1):(count1)]
@@ -3351,12 +3347,21 @@ fit.log.lik.trend.cycle.joint.model.3.1 <- function(thetas, estimated.Model, n, 
   #penalty.sign <- sum((sign(Model$delta.c[,1])!=sign(Model$delta.t[,1])))*10000 + sum((sign(Model$delta.c[,2])!=sign(Model$delta.t[,2])))*10000
   penalty.sign <- sum(abs(sign(Model$delta.c[,1]) - sign(Model$delta.t[,1])) > 1)*10000 + sum(abs(sign(Model$delta.c[,2]) - sign(Model$delta.t[,2])) > 1)*10000
   
-  penalty.size <- (1+Model$delta.c[2:(m.Y+1)]^2)/abs(Model$delta.c[2:(m.Y+1)])
+  cycle.penalty.indices <- integer(0)
+  if(indic.cycle.use=="FALSE"){
+    cycle.penalty.indices <- dim(observables.with.dates)[2] - c(1,0) - 1
+  }
+  kf.result <- KF_loglik_cycle_cpp(
+    Y_t,
+    StateSpace,
+    indic_pos_z = KF.load$indic_pos,
+    cycle_indices = cycle.penalty.indices
+  )
   
   # Penalty on the cycle => should be around -0.5;0.5 otherwise penalty
   if(indic.cycle.use=="FALSE"){
     
-    abs.diff.expectation <- abs(rep(0, 2) - rowMeans(KF_filter_cpp(Y_t, StateSpace, indic_pos_z=KF.load$indic_pos)$Obs.updated)[dim(observables.with.dates)[2] - c(1,0)-1]) # Penalty in order that the mean of computed model based 4th cum is close to zero
+    abs.diff.expectation <- abs(rep(0, 2) - kf.result$cycle_means) # Penalty in order that the mean of computed model based 4th cum is close to zero
     
     penalty.cycle.expectation <- ifelse(abs.diff.expectation >= 0.5, abs.diff.expectation^2*100, 0)
   } else{
@@ -3391,7 +3396,7 @@ fit.log.lik.trend.cycle.joint.model.3.1 <- function(thetas, estimated.Model, n, 
   #   #penalty.4th.cum.var <- 0
   # }
   
-  res <- -KF_filter_cpp(Y_t, StateSpace, indic_pos_z=KF.load$indic_pos)$loglik + penalty.sign +sum(penalty.cycle.expectation)
+  res <- -kf.result$loglik + penalty.sign + sum(penalty.cycle.expectation)
   
   # if(!is.numeric(res)){
   #   res <- 1000000000
@@ -4592,8 +4597,8 @@ compute.proba <- function(Model,X,b,y,HH,step,max.v,
   
   #### STEP 1: INITIALIZE ALL ####
   
-  Proba <- NULL
   T <- dim(X)[1]
+  Proba <- matrix(NA_real_, T, length(HH))
   #v <- matrix(seq(.00000001,max.v,by=step),nrow=1)
   # New way of parameterzing v:
   max.x <- log(max.v)
@@ -4663,7 +4668,7 @@ compute.proba <- function(Model,X,b,y,HH,step,max.v,
     integrand <- numerator / (matrix(1,T,1) %*% v)
     
     # Compute probability. To do so, we have to multiply by the weights (Riemann sum).
-    Proba <- cbind(Proba, .5 - 1/pi * integrand %*% t(weights))
+    Proba[, count] <- as.numeric(.5 - 1/pi * integrand %*% t(weights))
   }
   
   ## Return the probability => dimension is T x dim(HH).
@@ -4699,7 +4704,7 @@ compute.distri.plus.stdv <- function(Model,X,b,HH,  # used in compute.analytical
   
   # vec.y is the vector of y, that is P(gamma_i X_(t+i) < y).
   vec.y <- seq(min.bx,max.bx,by=step.distri)
-  CDF <- NULL
+  CDF <- matrix(NA_real_, nrow = dim(X)[1], ncol = length(vec.y))
   
   # Loop for the different => different bins of the Riemann sum.
   for(iii in 1:length(vec.y)){
@@ -4720,7 +4725,7 @@ compute.distri.plus.stdv <- function(Model,X,b,HH,  # used in compute.analytical
     # Compute CDF:
     ## - each column contains P(gamma_i X_(t+i) < y) for a different y and all time period (for a given horizon (maturity)).
     ## - each line contains a distribution for a considered time and horizon (maturity).
-    CDF <- cbind(CDF,aux)
+    CDF[, iii] <- aux[, 1]
   }
   
   # Compute the PDF:
@@ -4750,10 +4755,9 @@ compute.distri.plus.stdv <- function(Model,X,b,HH,  # used in compute.analytical
     
     for(dim.X in 1:(Model$n + Model$q)){
       epsilon <- stdv.X[dim.X]/100
-      CDF.aux <- NULL
+      CDF.aux <- matrix(NA_real_, nrow = dim(X)[1], ncol = length(vec.y))
       for(iii in 1:length(vec.y)){
         y <- vec.y[iii]
-        print(c(dim.X,y))
         X.aux <- X
         X.aux[,dim.X] <- X.aux[,dim.X] + epsilon
         aux <- compute.proba(Model,X.aux,b,y,HH,step.4.integral,
@@ -4761,7 +4765,7 @@ compute.distri.plus.stdv <- function(Model,X,b,HH,  # used in compute.analytical
                              indic.average,
                              AB.list.external,
                              Indic.5y.in.Xy)
-        CDF.aux <- cbind(CDF.aux,aux)
+        CDF.aux[, iii] <- aux[, 1]
       }
       #### CHECK THAT !!!!!!!!
       Grad.PDF[,,dim.X] <- (

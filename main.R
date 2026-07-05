@@ -11,7 +11,9 @@ message("MRT replication: starting US workflow.")
 
 quiet_source <- function(file, env = parent.frame(), echo = FALSE) {
   suppressPackageStartupMessages(
-    invisible(capture.output(source(file, local = env, echo = echo)))
+    suppressWarnings(
+      invisible(capture.output(source(file, local = env, echo = echo)))
+    )
   )
 }
 
@@ -63,7 +65,8 @@ estimation_save_model_files <- c(
 )
 
 initial_model_files <- canonical_model_files # starts from there if new estimation
-chart_model_files   <- canonical_model_files # these files are the ones used to produce charts
+#chart_model_files   <- canonical_model_files # these files are the ones used to produce charts
+chart_model_files   <- estimation_save_model_files # these files are the ones used to produce charts
 
 
 # Set to TRUE to recompute the smoothed survey-distribution inputs from the raw
@@ -71,6 +74,11 @@ chart_model_files   <- canonical_model_files # these files are the ones used to 
 # the precomputed workbook inputs included in data/processed/.
 recompute_mixture_inputs <- FALSE
 indic.compute.mixture <- recompute_mixture_inputs
+
+# Set to TRUE to recompute the analytical model-implied distributions used in
+# the distribution-fit figures/tables. The default reads the cached files in
+# results/US/. Missing cached files are recomputed automatically.
+recompute_model_implied_distributions <- FALSE
 
 # Set to TRUE only when you want the long diagnostic PDFs from the smoothing
 # step. These are not needed to reproduce the paper figures and tables.
@@ -95,9 +103,9 @@ show_implied_distribution_progress <- TRUE
 #   Nelder-Mead -> nlminb -> Nelder-Mead.
 # These defaults reproduce the historical estimation schedule.
 optimization_setup <- list(
-  outer_loops = 3,
+  outer_loops = 10,
   nelder_mead_first_maxit = 2000,
-  nlminb_maxit = 30,
+  nlminb_maxit = 40,
   nelder_mead_second_maxit = 2000,
   trace = TRUE,
   compute_hessian = FALSE,
@@ -125,6 +133,7 @@ required_dirs <- c(
   "results/US/estimation_runs",
   "tables",
   "tables/US_2024/Baseline",
+  "tables/US_2024/Comparison",
   "tables/US_2024/All_moments",
   "tables/US_2024/No_3rd_4th"
 )
@@ -139,7 +148,6 @@ Rcpp::sourceCpp("RScripts/helpers/kalman_cpp.cpp")
 
 # Raw and pre-processed US data used throughout the replication.
 message("MRT replication: loading US raw and processed data.")
-.data_load_plot_device <- grDevices::dev.cur()
 grDevices::pdf(NULL)
 .data_load_plot_device <- grDevices::dev.cur()
 quiet_source("RScripts/US/load.data.US.R")
@@ -188,7 +196,8 @@ run_model_specification <- function(path_graph,
                                     write_parameter_table = FALSE,
                                     write_distribution_tables = FALSE,
                                     write_stagflation_figure = FALSE,
-                                    path_table = NULL) {
+                                    path_table = NULL,
+                                    path_distribution_table = path_table) {
   message("")
   message("------------------------------------------------------------")
   message("MRT replication: starting model specification -> ", specification)
@@ -197,6 +206,15 @@ run_model_specification <- function(path_graph,
   indic.3rd.use <- use_skewness
   indic.4th.use <- use_kurtosis
   indic.model.var.only <- variance_only
+  implied_distribution_cache_exists <- file.exists(implied_distribution_file)
+  compute_implied_distribution <- compute_implied_distribution ||
+    !implied_distribution_cache_exists
+  if (!implied_distribution_cache_exists) {
+    message(
+      "MRT replication: cached implied distributions not found; recomputing ",
+      implied_distribution_file
+    )
+  }
   indic.make.implied.distri <- if (compute_implied_distribution) "TRUE" else "FALSE"
   path_implied_distribution <- implied_distribution_file
   show_stagflation_progress <- show_stagflation_progress
@@ -264,9 +282,10 @@ run_model_specification <- function(path_graph,
     source_script("RScripts/make_tables/make_table_param.R", env = run_env)
   }
   if (write_distribution_tables) {
-    if (is.null(path_table)) {
-      stop("Set path_table when writing tables.", call. = FALSE)
+    if (is.null(path_distribution_table)) {
+      stop("Set path_distribution_table when writing distribution tables.", call. = FALSE)
     }
+    path_table <- path_distribution_table
     source_script("RScripts/make_tables/make_tables_distribution_diagnostics.R", env = run_env)
   }
 
@@ -293,7 +312,7 @@ run_if_selected(
   use_skewness = TRUE,
   use_kurtosis = TRUE,
   variance_only = FALSE,
-  compute_implied_distribution = TRUE,
+  compute_implied_distribution = recompute_model_implied_distributions,
   implied_distribution_file = "results/US/US.Model.Implied.Distribution.all.moments.RData",
   include_full_output_set = TRUE,
   write_parameter_table = FALSE
@@ -306,7 +325,7 @@ run_if_selected(
   use_skewness = FALSE,
   use_kurtosis = FALSE,
   variance_only = TRUE,
-  compute_implied_distribution = TRUE,
+  compute_implied_distribution = recompute_model_implied_distributions,
   implied_distribution_file = "results/US/US.Model.Implied.Distribution.no.3rd.4th.RData"
 )
 
@@ -317,12 +336,13 @@ run_if_selected(
   use_skewness = TRUE,
   use_kurtosis = FALSE,
   variance_only = FALSE,
-  compute_implied_distribution = TRUE,
+  compute_implied_distribution = recompute_model_implied_distributions,
   implied_distribution_file = "results/US/US.Model.Implied.Distribution.with.3rd.only.RData",
   write_parameter_table = TRUE,
   write_distribution_tables = TRUE,
   write_stagflation_figure = TRUE,
-  path_table = "tables/US_2024/Baseline/"
+  path_table = "tables/US_2024/Baseline/",
+  path_distribution_table = "tables/US_2024/Comparison/"
 )
 
 # RScripts/check_paper_outputs.R checks that all paper inputs are regenerated

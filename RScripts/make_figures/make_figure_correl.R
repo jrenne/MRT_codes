@@ -19,6 +19,88 @@ third.part   <- matrix(c(Model.final$delta[,2],rep(0,q)),1,Model.final$n+Model.f
 all.corr     <- matrix(NA,dim(KF.result4$xi.tT)[1],length(HH)+1)
 all.corr[,1] <- vec.dates$date
 
+make_percent_axis <- function(side, limits, by = 0.1, col = "black", col.axis = col) {
+  ticks <- seq(limits[1], limits[2], by = by)
+  axis(
+    side,
+    at = ticks,
+    labels = paste0(round(100 * ticks), "%"),
+    las = 1,
+    col = col,
+    col.axis = col.axis
+  )
+}
+
+standardize_for_plot <- function(x) {
+  center <- mean(x, na.rm = TRUE)
+  scale <- sd(x, na.rm = TRUE)
+  if (!is.finite(scale) || scale == 0) {
+    scale <- 1
+  }
+  list(
+    z = (x - center) / scale,
+    center = center,
+    scale = scale
+  )
+}
+
+axis_positions <- function(ticks, standardization) {
+  (ticks - standardization$center) / standardization$scale
+}
+
+draw_standardized_correlation_tp <- function(correlation_dates,
+                                             correlation_values,
+                                             term_premium_dates,
+                                             term_premium_bps,
+                                             term_premium_label) {
+  corr_std <- standardize_for_plot(correlation_values)
+  tp_std <- standardize_for_plot(term_premium_bps)
+  y.lim <- range(c(corr_std$z, tp_std$z), finite = TRUE)
+  y.pad <- 0.08 * diff(y.lim)
+  y.lim <- y.lim + c(-y.pad, y.pad)
+
+  correlation_ticks <- pretty(correlation_values, n = 6)
+  correlation_tick_locations <- axis_positions(correlation_ticks, corr_std)
+  term_premium_ticks <- pretty(term_premium_bps, n = 6)
+  term_premium_tick_locations <- axis_positions(term_premium_ticks, tp_std)
+
+  plot(as.Date(correlation_dates), corr_std$z, type = "n",
+       ylim = y.lim,
+       xlab = "", ylab = "",
+       las = 1,
+       yaxt = "n",
+       lwd = length(HH) + 1 - u)
+
+  axis(2,
+       at = correlation_tick_locations,
+       labels = paste0(round(100 * correlation_ticks), "%"),
+       las = 1)
+  axis(4,
+       at = term_premium_tick_locations,
+       labels = paste0(round(term_premium_ticks), " bps"),
+       col = "dark grey",
+       col.axis = "dark grey",
+       las = 1)
+  mtext("Correlation (%)", side = 2, line = 3.0, cex = 0.85)
+  mtext("Term premium (bps)", side = 4, line = 3.8, cex = 0.85, col = "dark grey")
+
+  grid()
+  make_recessions()
+  abline(h = 0, lty = 2)
+  lines(as.Date(correlation_dates), corr_std$z,
+        lwd = length(HH) + 1 - u)
+  lines(as.Date(term_premium_dates), tp_std$z,
+        lwd = 2, col = "dark grey")
+
+  legend("topleft",
+         c(paste(horiz_in_Q, "-quarter correlation (lhs)", sep = ""),
+           term_premium_label),
+         bg = "white",
+         col = c("black", "dark grey"),
+         lwd = 2,
+         cex = 0.9)
+}
+
 
 path <- paste0(path_graph,"correlation.pdf")
 pdf(path, width = 7, height = 7)
@@ -53,8 +135,9 @@ dev.off()
 
 path <- paste0(path_graph,"correlation_singlePlot.pdf")
 pdf(path, width = 7, height = 4,pointsize = 11)
-par(plt=c(.1,.95,.15,.95))
+par(plt=c(.10,.95,.15,.95))
 par(mfrow=c(1,1))
+y.lim.single <- c(-0.2, 0.5)
 
 for (u in 1:length(HH)) {
   
@@ -65,10 +148,12 @@ for (u in 1:length(HH)) {
   if(u == 1){
     plot(as.Date(vec.dates$date),c(res.corr.test), type="l",
          #ylim=c(-.3,0.3),
-         ylim = c(-0.2,0.5),
+         ylim = y.lim.single,
          xlab="",ylab="",
          las=1,
+         yaxt = "n",
          lwd=length(HH)+1-u)
+    make_percent_axis(2, y.lim.single)
     grid()
     
     make_recessions()
@@ -124,43 +209,21 @@ if (nzchar(fred_key) && requireNamespace("fredr", quietly = TRUE)) {
 }
 
 path <- paste0(path_graph,"correlation_compareTP.pdf")
-pdf(path, width = 7, height = 4,pointsize = 11)
-par(plt=c(.1,.85,.15,.95))
+pdf(path, width = 9, height = 4,pointsize = 11)
+par(plt=c(.11,.86,.15,.95))
 par(mfrow=c(1,1))
-
-y.lim <- c(-.3,0.2)
 
 res.cov.test <- first.part%*%res.test[,,u] 
 var.1 <- second.part%*%res.test[,,u] 
 var.2 <- third.part%*%res.test[,,u] 
 res.corr.test <- res.cov.test/(var.1^0.5*var.2^0.5)
-max(res.corr.test)
-plot(as.Date(vec.dates$date),c(res.corr.test), type="l",
-     ylim=y.lim,
-     xlab="",ylab="",
-     las=1,
-     lwd=length(HH)+1-u)
-
-make_recessions()
-abline(h=0, lty=2)
-grid()
-
-lines(data_TP$date,-data_TP$value/10,lwd=2,col="dark grey")
-
-values.TP <- seq(-3,3,by=.5)
-location.ticks <- -values.TP/10
-
-axis(4,at=location.ticks,
-     labels = paste(100*values.TP," bps",sep=""),
-     col="dark grey",col.axis="dark grey",las=1)
-
-legend("topleft",
-       c(paste(horiz_in_Q,"-quarter correlation (lhs)",sep=""),
-         "Kim-Wright 10-year term premium (rhs)"),
-       bg="white",
-       col=c("black","dark grey"),
-       lwd=2,
-       cex=0.9)
+draw_standardized_correlation_tp(
+  vec.dates$date,
+  c(res.corr.test),
+  data_TP$date,
+  100 * data_TP$value,
+  "Kim-Wright 10-year term premium (rhs)"
+)
 
 dev.off()
 
@@ -183,47 +246,21 @@ if(area=="EA"){
     rename(value=Y10)
   
   path <- paste0(path_graph,"correlation_compareTP.pdf")
-  pdf(path, width = 7, height = 4,pointsize = 11)
-  par(plt=c(.1,.85,.15,.95))
+  pdf(path, width = 9, height = 4,pointsize = 11)
+  par(plt=c(.11,.86,.15,.95))
   par(mfrow=c(1,1))
-  
-  #y.lim <- c(-.3,0.2)
-  y.lim <- c(-.2,0.3)
   
   res.cov.test <- first.part%*%res.test[,,u] 
   var.1 <- second.part%*%res.test[,,u] 
   var.2 <- third.part%*%res.test[,,u] 
   res.corr.test <- res.cov.test/(var.1^0.5*var.2^0.5)
-  max(res.corr.test)
-  plot(as.Date(vec.dates$date),c(res.corr.test), type="l",
-       ylim=y.lim,
-       xlab="",ylab="",
-       las=1,
-       lwd=length(HH)+1-u)
-  
-  make_recessions()
-  abline(h=0, lty=2)
-  grid()
-  
-  #shift_value <- 0.0  # shift amount downward
-  lines(data_TP$date,-data_TP$value*100/10,lwd=2,col="dark grey")
-  #lines(data_TP$date, (-data_TP$value * 100 / 10) - shift_value, lwd = 2, col = "dark grey")
-  
-  values.TP <- seq(-3,3,by=.5)
-  location.ticks <- -values.TP/10
-  #location.ticks <- -values.TP / 10 - shift_value  # shift tick positions
-  
-  axis(4,at=location.ticks,
-       labels = paste(100*values.TP," bps",sep=""),
-       col="dark grey",col.axis="dark grey",las=1)
-  
-  legend("topleft",
-         c(paste(horiz_in_Q,"-quarter correlation (lhs)",sep=""),
-           "EUTERPE 10-year term premium (rhs)"),
-         bg="white",
-         col=c("black","dark grey"),
-         lwd=2,
-         cex=0.9)
+  draw_standardized_correlation_tp(
+    vec.dates$date,
+    c(res.corr.test),
+    data_TP$date,
+    10000 * data_TP$value,
+    "EUTERPE 10-year term premium (rhs)"
+  )
   
   dev.off()
   

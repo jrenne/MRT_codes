@@ -218,10 +218,11 @@ Rcpp::List KF_filter_cpp(const Eigen::MatrixXd & Y,
     //2 Forecast of y_t: y.t|t-1 = A'X.t + H'xi.t|t-1 
     Obs_pred  = mut + G * W_pred;
     //4 h.t = H'P.t|t-1 H + R 
-    Eigen::VectorXd M_row = M_all.row(t); // add for new delta
-    Eigen::MatrixXd M = M_row.asDiagonal(); // add for new delta
-    Omega_t(t) = M * M.transpose();
-    M_pred    = G * P_pred * G.transpose() + M * M.transpose();
+    Eigen::VectorXd M_row = M_all.row(t);
+    Eigen::MatrixXd measurement_variance =
+      M_row.array().square().matrix().asDiagonal();
+    Omega_t(t) = measurement_variance;
+    M_pred = G * P_pred * G.transpose() + measurement_variance;
     
     // UPDATING STEP
     //--------------
@@ -382,6 +383,138 @@ Rcpp::List KF_filter_cpp(const Eigen::MatrixXd & Y,
   );
   
   
+}
+
+// [[Rcpp::export]]
+Rcpp::List KF_loglik_cycle_cpp(const Eigen::MatrixXd & Y,
+                               const Rcpp::List      & StateSpace,
+                               const Eigen::VectorXd & indic_pos_z,
+                               const Rcpp::IntegerVector & cycle_indices){
+  
+  Eigen::MatrixXd nu_t  = StateSpace("nu_t");
+  Eigen::MatrixXd H     = StateSpace("H");
+  List sigma            = StateSpace("N");
+  Eigen::MatrixXd mu_t  = StateSpace("mu_t");
+  Eigen::MatrixXd G     = StateSpace("G");
+  Eigen::MatrixXd M_all = StateSpace("M");
+  Eigen::MatrixXd P0    = StateSpace("Sigma_0");
+  Eigen::MatrixXd W0    = StateSpace("rho_0");
+  
+  int time = Y.rows();
+  int n_W = G.cols();
+  int n_obs = G.rows();
+  int n_cycle = cycle_indices.size();
+  
+  double logl = 0.0;
+  double penalty_neg_factor = 100000;
+  double log_two_pi = log(2 * M_PI);
+  
+  Eigen::VectorXd W = W0;
+  Eigen::MatrixXd P = P0;
+  Eigen::VectorXd cycle_sums = Eigen::VectorXd::Zero(n_cycle);
+  
+  for(int t = 0; t < time; t++){
+    double penalty_neg_t = 0.0;
+    
+    Eigen::VectorXd nut = nu_t.row(t);
+    Eigen::VectorXd mut = mu_t.row(t);
+    Eigen::VectorXd Yt = Y.row(t);
+    
+    Eigen::VectorXd W_pred = nut + H * W;
+    
+    MatrixXd N;
+    if(t == 0){
+      N = Q_function(sigma, W0);
+    } else{
+      N = Q_function(sigma, W);
+    }
+    
+    if (indic_pos_z.sum() > 0) {
+      for (int i = 0; i < W_pred.rows(); ++i) {
+        if (indic_pos_z(i) == 1 && W_pred(i) < 0) {
+          W_pred(i) = 0.0;
+        }
+      }
+    }
+    
+    Eigen::MatrixXd P_pred = H * P * H.transpose() + N;
+    Eigen::VectorXd Obs_pred = mut + G * W_pred;
+    
+    Eigen::VectorXd M_row = M_all.row(t);
+    Eigen::MatrixXd measurement_variance =
+      M_row.array().square().matrix().asDiagonal();
+    Eigen::MatrixXd M_pred = G * P_pred * G.transpose() + measurement_variance;
+    Eigen::VectorXd residual = Yt - Obs_pred;
+    
+    Array<bool, Dynamic, 1> bool_na(Yt.array() == Yt.array());
+    int n_obs_modif = bool_na.count();
+    
+    Eigen::VectorXd resid_modif = Eigen::VectorXd::Zero(n_obs_modif);
+    Eigen::MatrixXd M_modif = Eigen::MatrixXd::Zero(n_obs_modif, n_obs_modif);
+    Eigen::MatrixXd G_modif = Eigen::MatrixXd::Zero(n_obs_modif, n_W);
+    
+    int counter_rows = 0;
+    for (int i = 0; i < n_obs; i++){
+      if(bool_na(i) == TRUE){
+        resid_modif(counter_rows) = residual(i);
+        G_modif.row(counter_rows) = G.row(i);
+        
+        int counter_cols = 0;
+        for (int j = 0; j < n_obs; j++){
+          if (bool_na(j) == TRUE){
+            M_modif(counter_rows, counter_cols) = M_pred(i,j);
+            counter_cols += 1;
+          }
+        }
+        counter_rows += 1;
+      }
+    }
+    
+    double det_M_pred = M_modif.determinant();
+    Eigen::MatrixXd M_inv;
+    if (det_M_pred < 0 || det_M_pred > 1e80) {
+      M_inv = MatrixXd::Zero(M_modif.rows(), M_modif.cols());
+    } else{
+      M_inv = M_modif.inverse();
+    }
+    
+    Eigen::MatrixXd Gain = P_pred * G_modif.transpose() * M_inv;
+    Eigen::VectorXd W_up = W_pred + Gain * resid_modif;
+    
+    if (indic_pos_z.sum() > 0) {
+      for (int i = 0; i < W_up.rows(); ++i) {
+        if (indic_pos_z(i) == 1 && W_up(i) < 0) {
+          penalty_neg_t += W_up(i) * W_up(i);
+          W_up(i) = 0.0;
+        }
+      }
+      penalty_neg_t = penalty_neg_t * penalty_neg_factor;
+    }
+    
+    Eigen::MatrixXd P_up = P_pred - Gain * G_modif * P_pred;
+    
+    double quadratic = (resid_modif.transpose() * M_inv * resid_modif).coeff(0);
+    if (std::isnan(det_M_pred) || std::isinf(det_M_pred) || det_M_pred <= 0) {
+      logl += -0.5 * (n_obs_modif * log_two_pi + quadratic) - 70000000 - penalty_neg_t;
+    } else {
+      logl += -0.5 * (n_obs_modif * log_two_pi + log(det_M_pred) + quadratic) - penalty_neg_t;
+    }
+    
+    for (int k = 0; k < n_cycle; k++) {
+      int idx = cycle_indices[k] - 1;
+      if (idx >= 0 && idx < n_obs) {
+        cycle_sums(k) += mut(idx) + G.row(idx).dot(W_up);
+      }
+    }
+    
+    W = W_up;
+    P = P_up;
+  }
+  
+  return List::create(
+    Named("loglik") = logl,
+    Named("cycle_means") = cycle_sums / time
+  );
 }
 
 
@@ -798,4 +931,3 @@ Rcpp::List Kalman_filter_cpp(List all_parameters, MatrixXd Y,MatrixXd X,
   //                     Named("eta_t_star") = eta_t_star,Named("indic_notNaN") = indic_notNaN, Named("n_obs_modif") = n_obs_modif);
   
 }
-

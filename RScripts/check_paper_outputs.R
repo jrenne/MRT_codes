@@ -63,13 +63,20 @@ audit_one <- function(path) {
 figure_audit <- do.call(rbind, lapply(paper_figures, audit_one))
 
 generated_tables <- c(
-  "table_param.txt",
-  "table_distribution_divergence.txt",
-  "table_distribution_divergence_VaR.txt"
+  table_param = "table_param.txt",
+  table_distribution_divergence = "table_distribution_divergence.txt",
+  table_distribution_divergence_VaR = "table_distribution_divergence_VaR.txt"
 )
 
-table_audit <- do.call(rbind, lapply(generated_tables, function(file_name) {
-  target <- file.path("tables/US_2024/Baseline", file_name)
+map_generated_table <- function(file_name) {
+  if (file_name == "table_param.txt") {
+    return(file.path("tables/US_2024/Baseline", file_name))
+  }
+  file.path("tables/US_2024/Comparison", file_name)
+}
+
+table_audit <- do.call(rbind, lapply(unname(generated_tables), function(file_name) {
+  target <- map_generated_table(file_name)
   data.frame(
     path = file.path("Tables", file_name),
     status = if (file.exists(target)) "generated_by_main" else "generated_by_main_expected",

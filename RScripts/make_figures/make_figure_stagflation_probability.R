@@ -71,7 +71,7 @@ for (batch_id in seq_along(batch_starts)) {
     gdp_yoy <- as.numeric(4 * Model.final$pi.bar[2] + X_h %*% delta_gdp)
     event <- infl_yoy > 4 & gdp_yoy < 0
     event_counts[, horizon_index] <- event_counts[, horizon_index] +
-      as.numeric(tapply(event, sim_index, sum, na.rm = TRUE))
+      colSums(matrix(event, nrow = current_batch_size))
   }
 }
 probability_data[, paste0(target_horizons, "Q")] <- event_counts / nb_sim
@@ -91,7 +91,10 @@ if (show_stagflation_progress) {
 pdf(path, width = 7, height = 4, pointsize = 11)
 old_par <- par(no.readonly = TRUE)
 on.exit(par(old_par), add = TRUE)
-par(mar = c(3.0, 3.0, 0.6, 0.4), mgp = c(1.8, 0.5, 0), tcl = -0.25)
+par(mar = c(3.0, 3.6, 0.6, 0.4), mgp = c(1.8, 0.6, 0), tcl = -0.25)
+y.lim <- c(0, max(probability_data[, paste0(target_horizons, "Q")], na.rm = TRUE) * 1.1)
+probability_ticks <- pretty(y.lim)
+probability_ticks <- probability_ticks[probability_ticks >= y.lim[1] & probability_ticks <= y.lim[2]]
 
 matplot(
   probability_data$date,
@@ -103,8 +106,10 @@ matplot(
   xlab = "",
   ylab = "",
   las = 1,
-  ylim = c(0, max(probability_data[, paste0(target_horizons, "Q")], na.rm = TRUE) * 1.1)
+  yaxt = "n",
+  ylim = y.lim
 )
+axis(2, at = probability_ticks, labels = paste0(round(100 * probability_ticks), "%"), las = 1)
 grid()
 make_recessions()
 matlines(
